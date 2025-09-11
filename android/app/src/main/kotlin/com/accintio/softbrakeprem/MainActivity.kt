@@ -1,4 +1,4 @@
-package com.accintio.soft_brake
+package com.accintio.softbrake
 
 import io.flutter.embedding.android.FlutterActivity
 

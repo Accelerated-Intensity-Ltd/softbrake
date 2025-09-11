@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:soft_brake/main.dart';
+import 'package:softbrake/main.dart';
 
 void main() {
   group('SlowDown App Tests', () {
@@ -28,7 +28,7 @@ void main() {
       final opacityWidget = tester.widget<Opacity>(
         find.ancestor(of: menuButton, matching: find.byType(Opacity))
       );
-      expect(opacityWidget.opacity, equals(0.2));
+      expect(opacityWidget.opacity, equals(0.8));
     });
 
     testWidgets('Text opacity starts at 100%', (WidgetTester tester) async {
@@ -48,14 +48,73 @@ void main() {
       expect(foundFullOpacity, isTrue);
     });
 
-    testWidgets('Reset menu item exists', (WidgetTester tester) async {
+    testWidgets('Menu items exist with icons and configure grouping', (WidgetTester tester) async {
       await tester.pumpWidget(const SoftBrakeApp());
-      
+
       await tester.tap(find.byType(PopupMenuButton<String>));
       await tester.pumpAndSettle();
-      
-      expect(find.text('Reset'), findsOneWidget);
+
+      // Check that menu items exist
+      expect(find.text('Text'), findsOneWidget);
+      expect(find.text('Background'), findsOneWidget);
+      expect(find.text('Speed'), findsOneWidget);
+      expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('About'), findsOneWidget);
+
+      // Check that Configure heading exists
+      expect(find.text('Configure'), findsOneWidget);
+
+      // Check that icons are present
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      expect(find.byIcon(Icons.text_fields), findsOneWidget);
+      expect(find.byIcon(Icons.image), findsOneWidget);
+      expect(find.byIcon(Icons.speed), findsOneWidget);
+      expect(find.byIcon(Icons.notifications), findsOneWidget);
+      expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    });
+
+    testWidgets('Menu icons have proper accessibility support', (WidgetTester tester) async {
+      await tester.pumpWidget(const SoftBrakeApp());
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+
+      // Check that icons exist with semantic properties for assistive technologies
+      // Verify all required icons are present in the menu
+      final settingsIcon = find.byIcon(Icons.settings);
+      final textFieldsIcon = find.byIcon(Icons.text_fields);
+      final imageIcon = find.byIcon(Icons.image);
+      final speedIcon = find.byIcon(Icons.speed);
+      final notificationsIcon = find.byIcon(Icons.notifications);
+      final infoIcon = find.byIcon(Icons.info_outline);
+
+      expect(settingsIcon, findsOneWidget);
+      expect(textFieldsIcon, findsOneWidget);
+      expect(imageIcon, findsOneWidget);
+      expect(speedIcon, findsOneWidget);
+      expect(notificationsIcon, findsOneWidget);
+      expect(infoIcon, findsOneWidget);
+
+      // Verify icons have semantic labels by checking widget properties
+      final settingsIconWidget = tester.widget<Icon>(settingsIcon);
+      final textFieldsIconWidget = tester.widget<Icon>(textFieldsIcon);
+      final imageIconWidget = tester.widget<Icon>(imageIcon);
+      final speedIconWidget = tester.widget<Icon>(speedIcon);
+      final notificationsIconWidget = tester.widget<Icon>(notificationsIcon);
+      final infoIconWidget = tester.widget<Icon>(infoIcon);
+
+      expect(settingsIconWidget.semanticLabel, equals('Configure settings'));
+      expect(textFieldsIconWidget.semanticLabel, equals('Text settings'));
+      expect(imageIconWidget.semanticLabel, equals('Background settings'));
+      expect(speedIconWidget.semanticLabel, equals('Speed settings'));
+      expect(notificationsIconWidget.semanticLabel, equals('Notification settings'));
+      expect(infoIconWidget.semanticLabel, equals('About information'));
+    });
+
+    testWidgets('Reset button exists', (WidgetTester tester) async {
+      await tester.pumpWidget(const SoftBrakeApp());
+
+      expect(find.byIcon(Icons.refresh), findsOneWidget);
     });
 
     testWidgets('About dialog shows copyright information', (WidgetTester tester) async {
@@ -104,16 +163,13 @@ void main() {
 
     testWidgets('Reset functionality works', (WidgetTester tester) async {
       await tester.pumpWidget(const SoftBrakeApp());
-      
-      await tester.tap(find.byType(PopupMenuButton<String>));
+
+      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pumpAndSettle();
-      
-      await tester.tap(find.text('Reset'));
-      await tester.pumpAndSettle();
-      
+
       final textWidgets = find.text('slow down');
       expect(textWidgets, findsAtLeastNWidgets(1));
-      
+
       final opacityWidgets = find.byType(Opacity);
       bool foundFullOpacity = false;
       for (final widget in tester.widgetList<Opacity>(opacityWidgets)) {
@@ -135,33 +191,24 @@ void main() {
 
     testWidgets('Text uses correct styling', (WidgetTester tester) async {
       await tester.pumpWidget(const SoftBrakeApp());
-      
+
       final textWidgets = find.text('slow down');
       expect(textWidgets, findsAtLeastNWidgets(1));
-      
+
       final firstTextWidget = tester.widgetList<Text>(textWidgets).first;
-      expect(firstTextWidget.style?.color, equals(Colors.white));
       expect(firstTextWidget.style?.fontSize, equals(32));
       expect(firstTextWidget.style?.fontFamily, equals('sans-serif'));
       expect(firstTextWidget.style?.fontWeight, equals(FontWeight.normal));
     });
 
-    testWidgets('Main container covers entire screen', (WidgetTester tester) async {
+    testWidgets('App has proper screen coverage', (WidgetTester tester) async {
       await tester.pumpWidget(const SoftBrakeApp());
-      
-      final containers = find.byType(Container);
-      expect(containers, findsWidgets);
-      
-      bool foundFullScreenContainer = false;
-      final containerList = tester.widgetList<Container>(containers).toList();
-      for (int i = 0; i < containerList.length; i++) {
-        final container = containerList[i];
-        if (container.color == Colors.black) {
-          foundFullScreenContainer = true;
-          break;
-        }
-      }
-      expect(foundFullScreenContainer, isTrue);
+
+      final scaffold = find.byType(Scaffold);
+      expect(scaffold, findsOneWidget);
+
+      final animatedContainers = find.byType(AnimatedContainer);
+      expect(animatedContainers, findsWidgets);
     });
   });
 

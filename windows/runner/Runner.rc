@@ -90,9 +90,9 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Accelerated Intensity Ltd" "\0"
-            VALUE "FileDescription", "soft_brake" "\0"
+            VALUE "FileDescription", "softbrake" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "soft_brake" "\0"
+            VALUE "InternalName", "softbrake" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 Accelerated Intensity Ltd. All rights reserved." "\0"
             VALUE "OriginalFilename", "slowdown.exe" "\0"
             VALUE "ProductName", "slowdown" "\0"
