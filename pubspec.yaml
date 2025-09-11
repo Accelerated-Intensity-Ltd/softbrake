@@ -1,0 +1,24 @@
+name: soft_brake
+description: "An app that adds deliberate friction to help people slow down from endless scrolling."
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_svg: ^2.0.10+1
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - VERSION.txt
+    - assets/images/
