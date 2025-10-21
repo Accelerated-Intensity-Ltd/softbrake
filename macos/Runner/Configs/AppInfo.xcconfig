@@ -8,7 +8,7 @@
 PRODUCT_NAME = soft brake
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.accintio.softbrake
+PRODUCT_BUNDLE_IDENTIFIER = com.accintio.soft-brake
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 Accelerated Intensity Ltd. All rights reserved.

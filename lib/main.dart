@@ -7,8 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/text_config.dart';
 import 'config/background_config.dart';
 import 'config/speed_config.dart';
-import 'config/notification_config.dart';
-import 'services/notification_service.dart';
 
 void main() {
   runApp(const SoftBrakeApp());
@@ -53,13 +51,10 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
   Color _textColor = Colors.white;
   BackgroundType _backgroundType = BackgroundType.color;
   String? _backgroundImagePath;
-  late NotificationService _notificationService;
-  NotificationPreferences _notificationPreferences = const NotificationPreferences();
 
   @override
   void initState() {
     super.initState();
-    _initializeNotificationService();
     _loadSettings();
     _animationController = AnimationController(
       duration: Duration(milliseconds: _scrollDuration),
@@ -295,92 +290,6 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
     _animationController.duration = const Duration(milliseconds: 100);
   }
 
-  Future<void> _saveNotificationSettings(NotificationPreferences preferences) async {
-    try {
-      // Check and request permissions if needed
-      final hasPermissions = await _notificationService.arePermissionsGranted();
-      if (!hasPermissions && preferences.isEnabled) {
-        final granted = await _notificationService.requestPermissions();
-        if (!granted) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Notification permissions are required to schedule reminders'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return;
-        }
-      }
-
-      // Update the notification service
-      final success = await _notificationService.updatePreferences(preferences);
-      if (success) {
-        setState(() {
-          _notificationPreferences = preferences;
-        });
-
-        if (mounted && preferences.isEnabled) {
-          final nextTimeString = _notificationService.getNextNotificationTimeString();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                nextTimeString != null
-                    ? 'Notification scheduled $nextTimeString'
-                    : 'Notification scheduled successfully',
-              ),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to schedule notification'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving notification settings: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _resetNotificationToDefaults() async {
-    try {
-      const defaultPreferences = NotificationPreferences();
-      await _notificationService.updatePreferences(defaultPreferences);
-      setState(() {
-        _notificationPreferences = defaultPreferences;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notification settings reset to defaults'),
-            backgroundColor: Colors.grey,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error resetting notification settings: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
 
   Future<String> _loadVersion() async {
@@ -424,15 +333,6 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
     }
   }
 
-  Future<void> _initializeNotificationService() async {
-    _notificationService = NotificationService();
-    final initialized = await _notificationService.initialize();
-    if (initialized) {
-      setState(() {
-        _notificationPreferences = _notificationService.currentPreferences;
-      });
-    }
-  }
 
   void _showTextDialog() {
     showDialog(
@@ -477,52 +377,6 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
     );
   }
 
-  void _showNotificationDialog() async {
-    // Check if permissions are granted first
-    final hasPermissions = await _notificationService.arePermissionsGranted();
-
-    if (!hasPermissions) {
-      // Request permissions first
-      final granted = await _notificationService.requestPermissions();
-      if (!granted && mounted) {
-        // Show an error dialog if permissions were denied
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              backgroundColor: Colors.black,
-              title: const Text('Permission Required', style: TextStyle(color: Colors.white)),
-              content: const Text(
-                'Notification permissions are required to schedule reminders. Please enable notifications in your device settings.',
-                style: TextStyle(color: Colors.white),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('OK', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
-        return;
-      }
-    }
-
-    // Show the notification configuration dialog
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return NotificationConfigDialog(
-            initialPreferences: _notificationPreferences,
-            onSave: _saveNotificationSettings,
-            onDefaults: _resetNotificationToDefaults,
-          );
-        },
-      );
-    }
-  }
 
 
   void _showAboutDialog() {
@@ -721,8 +575,6 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
                       _showBackgroundDialog();
                     } else if (value == 'speed') {
                       _showSpeedDialog();
-                    } else if (value == 'notifications') {
-                      _showNotificationDialog();
                     } else if (value == 'about') {
                       _showAboutDialog();
                     }
@@ -795,22 +647,6 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
                           ),
                           SizedBox(width: 12),
                           Text('Speed'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem<String>(
-                      value: 'notifications',
-                      child: Row(
-                        children: [
-                          SizedBox(width: 8),
-                          Icon(
-                            Icons.notifications,
-                            color: Colors.white,
-                            size: 18,
-                            semanticLabel: 'Notification settings',
-                          ),
-                          SizedBox(width: 12),
-                          Text('Notifications'),
                         ],
                       ),
                     ),
