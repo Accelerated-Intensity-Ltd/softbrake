@@ -1,7 +1,7 @@
 name: softbrake
 description: "An app that adds deliberate friction to help people slow down from endless scrolling."
 publish_to: 'none'
-version: 1.1.0+4
+version: 1.1.0+5
 
 environment:
   sdk: ^3.5.4
@@ -15,6 +15,8 @@ dependencies:
   flutter_colorpicker: ^1.0.3
   image_picker: ^1.0.4
   crop_your_image: ^2.0.0
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.0
 
 dev_dependencies:
   flutter_test:

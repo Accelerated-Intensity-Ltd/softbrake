@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/text_config.dart';
 import 'config/background_config.dart';
 import 'config/speed_config.dart';
+import 'config/notification_config.dart';
+import 'services/notification_service.dart';
 
 void main() {
   runApp(const SoftBrakeApp());
@@ -51,11 +53,14 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
   Color _textColor = Colors.white;
   BackgroundType _backgroundType = BackgroundType.color;
   String? _backgroundImagePath;
+  NotificationSettings _notificationSettings = NotificationSettings.defaultSettings;
+  final NotificationService _notificationService = NotificationService();
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _initializeNotifications();
     _animationController = AnimationController(
       duration: Duration(milliseconds: _scrollDuration),
       vsync: this,
@@ -185,6 +190,14 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
   }
 
 
+  Future<void> _initializeNotifications() async {
+    await _notificationService.initialize();
+    final settings = await _notificationService.loadSettings();
+    setState(() {
+      _notificationSettings = settings;
+    });
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final savedDuration = prefs.getInt('scroll_duration') ?? 100;
@@ -290,6 +303,20 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
     _animationController.duration = const Duration(milliseconds: 100);
   }
 
+  Future<void> _saveNotificationSettings(NotificationSettings settings) async {
+    await _notificationService.saveSettings(settings);
+    setState(() {
+      _notificationSettings = settings;
+    });
+  }
+
+  Future<void> _resetNotificationToDefaults() async {
+    await _notificationService.resetToDefaults();
+    setState(() {
+      _notificationSettings = NotificationSettings.defaultSettings;
+    });
+  }
+
 
 
   Future<String> _loadVersion() async {
@@ -372,6 +399,19 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
           initialDuration: _baseScrollDuration,
           onSave: _saveSpeedSettings,
           onDefaults: _resetSpeedToDefaults,
+        );
+      },
+    );
+  }
+
+  void _showNotificationDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return NotificationConfigDialog(
+          initialSettings: _notificationSettings,
+          onSave: _saveNotificationSettings,
+          onDefaults: _resetNotificationToDefaults,
         );
       },
     );
@@ -575,6 +615,8 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
                       _showBackgroundDialog();
                     } else if (value == 'speed') {
                       _showSpeedDialog();
+                    } else if (value == 'notifications') {
+                      _showNotificationDialog();
                     } else if (value == 'about') {
                       _showAboutDialog();
                     }
@@ -647,6 +689,22 @@ class _SoftBrakeScreenState extends State<SoftBrakeScreen>
                           ),
                           SizedBox(width: 12),
                           Text('Speed'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'notifications',
+                      child: Row(
+                        children: [
+                          SizedBox(width: 8),
+                          Icon(
+                            Icons.notifications,
+                            color: Colors.white,
+                            size: 18,
+                            semanticLabel: 'Notification settings',
+                          ),
+                          SizedBox(width: 12),
+                          Text('Notifications'),
                         ],
                       ),
                     ),
