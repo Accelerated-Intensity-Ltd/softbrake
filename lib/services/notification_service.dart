@@ -59,16 +59,54 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    // Create notification channel for Android
+    if (Platform.isAndroid) {
+      await _createNotificationChannel();
+    }
+
     _isInitialized = true;
 
-    // Request permissions for iOS/macOS
-    if (Platform.isIOS || Platform.isMacOS) {
-      await _requestPermissions();
-    }
+    // Request permissions for iOS/macOS/Android
+    await _requestPermissions();
+  }
+
+  Future<void> _createNotificationChannel() async {
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'softbrake_reminders',
+      'Soft Brake Reminders',
+      description: 'Gentle reminders to apply the brake',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    await _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
   }
 
   Future<void> _requestPermissions() async {
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (Platform.isAndroid) {
+      final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+          _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      // Request notification permission
+      final notificationResult = await androidImplementation?.requestNotificationsPermission();
+      debugPrint('NotificationService: Notification permission result: $notificationResult');
+
+      // Request exact alarm permission (Android 12+)
+      final exactAlarmResult = await androidImplementation?.requestExactAlarmsPermission();
+      debugPrint('NotificationService: Exact alarm permission result: $exactAlarmResult');
+
+      // Check if exact alarm permission is granted
+      final hasExactAlarmPermission = await androidImplementation?.canScheduleExactNotifications();
+      debugPrint('NotificationService: Can schedule exact notifications: $hasExactAlarmPermission');
+
+      if (hasExactAlarmPermission == false) {
+        debugPrint('NotificationService: Exact alarm permission denied - notifications may not work reliably');
+      }
+    } else if (Platform.isIOS || Platform.isMacOS) {
       await _flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin>()
@@ -109,7 +147,11 @@ class NotificationService {
     DateTime? scheduleTime;
     final scheduleTimeString = prefs.getString(_scheduleTimeKey);
     if (scheduleTimeString != null) {
-      scheduleTime = DateTime.tryParse(scheduleTimeString);
+      final parsedTime = DateTime.tryParse(scheduleTimeString);
+      // Only use the scheduled time if it's in the future
+      if (parsedTime != null && parsedTime.isAfter(DateTime.now())) {
+        scheduleTime = parsedTime;
+      }
     }
 
     Duration? countdownDuration;
@@ -201,10 +243,12 @@ class NotificationService {
     await cancelAllNotifications();
 
     if (settings.type == NotificationType.disabled) {
+      debugPrint('NotificationService: Notifications disabled, skipping scheduling');
       return;
     }
 
     await initialize();
+    debugPrint('NotificationService: Scheduling ${settings.type} notification');
 
     switch (settings.type) {
       case NotificationType.oneTime:
@@ -230,17 +274,24 @@ class NotificationService {
   }
 
   Future<void> _scheduleOneTimeNotification(NotificationSettings settings) async {
-    if (settings.scheduleTime == null || settings.scheduleTime!.isBefore(DateTime.now())) {
+    if (settings.scheduleTime == null ||
+        settings.scheduleTime!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
+      debugPrint('NotificationService: Invalid schedule time for one-time notification');
       return;
     }
 
+    debugPrint('NotificationService: Scheduling one-time notification for ${settings.scheduleTime}');
+
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
       'softbrake_reminders',
       'Soft Brake Reminders',
       channelDescription: 'Gentle reminders to apply the brake',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      fullScreenIntent: true,
     );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -255,29 +306,41 @@ class NotificationService {
       macOS: macOSPlatformChannelSpecifics,
     );
 
-    await _flutterLocalNotificationsPlugin.zonedSchedule(
-      0,
-      settings.title,
-      settings.body,
-      tz.TZDateTime.from(settings.scheduleTime!, tz.local),
-      platformChannelSpecifics,
-      payload: 'one_time_reminder',
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-    );
+    try {
+      await _flutterLocalNotificationsPlugin.zonedSchedule(
+        0,
+        settings.title,
+        settings.body,
+        tz.TZDateTime.from(settings.scheduleTime!, tz.local),
+        platformChannelSpecifics,
+        payload: 'one_time_reminder',
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+      debugPrint('NotificationService: One-time notification scheduled successfully');
+    } catch (e) {
+      debugPrint('NotificationService: Failed to schedule one-time notification: $e');
+    }
   }
 
   Future<void> _scheduleCountdownNotification(NotificationSettings settings) async {
-    if (settings.countdownDuration == null) return;
+    if (settings.countdownDuration == null) {
+      debugPrint('NotificationService: No countdown duration specified');
+      return;
+    }
 
     final scheduledTime = DateTime.now().add(settings.countdownDuration!);
+    debugPrint('NotificationService: Scheduling countdown notification for $scheduledTime (${settings.countdownDuration!.inMinutes} minutes from now)');
 
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
       'softbrake_reminders',
       'Soft Brake Reminders',
       channelDescription: 'Gentle reminders to apply the brake',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      fullScreenIntent: true,
     );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -292,15 +355,20 @@ class NotificationService {
       macOS: macOSPlatformChannelSpecifics,
     );
 
-    await _flutterLocalNotificationsPlugin.zonedSchedule(
-      1,
-      settings.title,
-      settings.body,
-      tz.TZDateTime.from(scheduledTime, tz.local),
-      platformChannelSpecifics,
-      payload: 'countdown_reminder',
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-    );
+    try {
+      await _flutterLocalNotificationsPlugin.zonedSchedule(
+        1,
+        settings.title,
+        settings.body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        platformChannelSpecifics,
+        payload: 'countdown_reminder',
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+      debugPrint('NotificationService: Countdown notification scheduled successfully');
+    } catch (e) {
+      debugPrint('NotificationService: Failed to schedule countdown notification: $e');
+    }
   }
 
   Future<void> _scheduleRecurringNotifications(NotificationSettings settings) async {
@@ -315,8 +383,11 @@ class NotificationService {
       'softbrake_reminders',
       'Soft Brake Reminders',
       channelDescription: 'Gentle reminders to apply the brake',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      fullScreenIntent: true,
     );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -374,5 +445,23 @@ class NotificationService {
 
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     return await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+  }
+
+  Future<bool> hasRequiredPermissions() async {
+    if (Platform.isAndroid) {
+      final androidImplementation = _flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidImplementation == null) return false;
+
+      // Check if we can schedule exact notifications (includes both notification and exact alarm permissions)
+      final canScheduleExact = await androidImplementation.canScheduleExactNotifications() ?? false;
+      return canScheduleExact;
+    }
+    return true; // iOS/macOS permissions are handled differently
+  }
+
+  Future<void> requestPermissions() async {
+    await _requestPermissions();
   }
 }

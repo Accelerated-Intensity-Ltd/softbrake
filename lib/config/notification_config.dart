@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import '../services/notification_service.dart';
 
 enum NotificationType { disabled, oneTime, countdown, recurring }
 
@@ -68,6 +70,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
   Duration? _selectedCountdown;
   TimeOfDay? _selectedRecurringTime;
   Set<int> _selectedDays = {};
+  bool _hasRequiredPermissions = true;
 
   // Predefined countdown durations
   static const List<Duration> _presetDurations = [
@@ -92,6 +95,19 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
 
     _titleController.addListener(() => setState(() {}));
     _bodyController.addListener(() => setState(() {}));
+
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    if (Platform.isAndroid) {
+      final hasPermissions = await NotificationService().hasRequiredPermissions();
+      if (mounted) {
+        setState(() {
+          _hasRequiredPermissions = hasPermissions;
+        });
+      }
+    }
   }
 
   @override
@@ -135,11 +151,21 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
   }
 
   Future<void> _selectDateTime() async {
+    final now = DateTime.now();
+
+    // Ensure initial date is not in the past
+    DateTime initialDate;
+    if (_selectedDateTime != null && _selectedDateTime!.isAfter(now)) {
+      initialDate = _selectedDateTime!;
+    } else {
+      initialDate = now.add(const Duration(hours: 1));
+    }
+
     final date = await showDatePicker(
       context: context,
-      initialDate: _selectedDateTime ?? DateTime.now().add(const Duration(hours: 1)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initialDate,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -156,9 +182,17 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     );
 
     if (date != null && mounted) {
+      // Calculate default time for the time picker
+      TimeOfDay defaultTime;
+      if (_selectedDateTime != null && _selectedDateTime!.isAfter(now)) {
+        defaultTime = TimeOfDay.fromDateTime(_selectedDateTime!);
+      } else {
+        defaultTime = TimeOfDay.fromDateTime(now.add(const Duration(hours: 1)));
+      }
+
       final time = await showTimePicker(
         context: context,
-        initialTime: TimeOfDay.fromDateTime(_selectedDateTime ?? DateTime.now().add(const Duration(hours: 1))),
+        initialTime: defaultTime,
         builder: (context, child) {
           return Theme(
             data: Theme.of(context).copyWith(
@@ -206,6 +240,157 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
         _selectedRecurringTime = time;
       });
     }
+  }
+
+  String _formatCustomDuration(Duration duration) {
+    if (duration.inHours > 0) {
+      final minutes = duration.inMinutes % 60;
+      if (minutes > 0) {
+        return '${duration.inHours}h ${minutes}m';
+      } else {
+        return '${duration.inHours}h';
+      }
+    } else {
+      return '${duration.inMinutes}m';
+    }
+  }
+
+  Future<void> _showCustomDurationDialog() async {
+    int hours = 0;
+    int minutes = 5;
+
+    // If there's a current custom duration, pre-populate the fields
+    if (_selectedCountdown != null && !_presetDurations.contains(_selectedCountdown)) {
+      hours = _selectedCountdown!.inHours;
+      minutes = _selectedCountdown!.inMinutes % 60;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.black,
+              title: const Text(
+                'Custom Duration',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const Text('Hours', style: TextStyle(color: Colors.white)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<int>(
+                                  value: hours,
+                                  dropdownColor: Colors.black,
+                                  style: const TextStyle(color: Colors.white),
+                                  items: List.generate(24, (index) {
+                                    return DropdownMenuItem(
+                                      value: index,
+                                      child: Text('$index'),
+                                    );
+                                  }),
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      hours = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            const Text('Minutes', style: TextStyle(color: Colors.white)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<int>(
+                                  value: minutes,
+                                  dropdownColor: Colors.black,
+                                  style: const TextStyle(color: Colors.white),
+                                  items: List.generate(60, (index) {
+                                    return DropdownMenuItem(
+                                      value: index,
+                                      child: Text('$index'),
+                                    );
+                                  }),
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      minutes = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Total: ${hours > 0 ? '${hours}h ' : ''}${minutes}m',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[800],
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: (hours == 0 && minutes == 0) ? null : () {
+                    final customDuration = Duration(hours: hours, minutes: minutes);
+                    setState(() {
+                      _selectedCountdown = customDuration;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: (hours == 0 && minutes == 0) ? Colors.grey[700] : Colors.green[600],
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Set'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildTypeSelection() {
@@ -345,13 +530,24 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
                 labelStyle: const TextStyle(color: Colors.white),
               );
             }),
+            // Show custom duration chip if a custom duration is selected
+            if (_selectedCountdown != null && !_presetDurations.contains(_selectedCountdown!))
+              ChoiceChip(
+                label: Text(_formatCustomDuration(_selectedCountdown!)),
+                selected: true,
+                onSelected: (selected) {
+                  if (!selected) {
+                    setState(() {
+                      _selectedCountdown = null;
+                    });
+                  }
+                },
+                backgroundColor: Colors.grey[800],
+                selectedColor: Colors.blue[600],
+                labelStyle: const TextStyle(color: Colors.white),
+              ),
             ElevatedButton(
-              onPressed: () {
-                // TODO: Show custom duration picker
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Custom duration picker not implemented yet')),
-                );
-              },
+              onPressed: _showCustomDurationDialog,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.grey[700],
                 foregroundColor: Colors.white,
@@ -413,6 +609,58 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     );
   }
 
+  Widget _buildPermissionWarning() {
+    if (_hasRequiredPermissions || _selectedType == NotificationType.disabled) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        border: Border.all(color: Colors.orange, width: 1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Permission Required',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Notifications require "Alarms & reminders" permission. Please enable it in Android Settings > Apps > Soft Brake > Permissions.',
+            style: TextStyle(color: Colors.orange.shade300, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () async {
+              await NotificationService().requestPermissions();
+              await _checkPermissions();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            child: const Text('Request Permission', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -439,6 +687,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
                 ),
               ),
               const SizedBox(height: 25),
+              _buildPermissionWarning(),
               _buildTypeSelection(),
               if (_selectedType != NotificationType.disabled) ...[
                 const SizedBox(height: 20),
