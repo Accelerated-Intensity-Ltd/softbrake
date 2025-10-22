@@ -19,8 +19,7 @@ class NotificationService {
   static const String _bodyKey = 'notification_body';
   static const String _scheduleTimeKey = 'notification_schedule_time';
   static const String _countdownDurationKey = 'notification_countdown_duration';
-  static const String _recurringDaysKey = 'notification_recurring_days';
-  static const String _recurringTimeKey = 'notification_recurring_time';
+  static const String _isDailyKey = 'notification_is_daily';
 
   bool _isInitialized = false;
 
@@ -160,23 +159,7 @@ class NotificationService {
       countdownDuration = Duration(minutes: countdownMinutes);
     }
 
-    List<int>? recurringDays;
-    final recurringDaysString = prefs.getStringList(_recurringDaysKey);
-    if (recurringDaysString != null) {
-      recurringDays = recurringDaysString.map((s) => int.parse(s)).toList();
-    }
-
-    TimeOfDay? recurringTime;
-    final recurringTimeString = prefs.getString(_recurringTimeKey);
-    if (recurringTimeString != null) {
-      final parts = recurringTimeString.split(':');
-      if (parts.length == 2) {
-        recurringTime = TimeOfDay(
-          hour: int.parse(parts[0]),
-          minute: int.parse(parts[1]),
-        );
-      }
-    }
+    final isDaily = prefs.getBool(_isDailyKey) ?? false;
 
     return NotificationSettings(
       type: type,
@@ -184,8 +167,7 @@ class NotificationService {
       body: body,
       scheduleTime: scheduleTime,
       countdownDuration: countdownDuration,
-      recurringDays: recurringDays,
-      recurringTime: recurringTime,
+      isDaily: isDaily,
     );
   }
 
@@ -208,17 +190,7 @@ class NotificationService {
       await prefs.remove(_countdownDurationKey);
     }
 
-    if (settings.recurringDays != null) {
-      await prefs.setStringList(_recurringDaysKey, settings.recurringDays!.map((d) => d.toString()).toList());
-    } else {
-      await prefs.remove(_recurringDaysKey);
-    }
-
-    if (settings.recurringTime != null) {
-      await prefs.setString(_recurringTimeKey, '${settings.recurringTime!.hour}:${settings.recurringTime!.minute}');
-    } else {
-      await prefs.remove(_recurringTimeKey);
-    }
+    await prefs.setBool(_isDailyKey, settings.isDaily);
 
     // Schedule notifications based on new settings
     await _scheduleNotifications(settings);
@@ -231,8 +203,7 @@ class NotificationService {
     await prefs.remove(_bodyKey);
     await prefs.remove(_scheduleTimeKey);
     await prefs.remove(_countdownDurationKey);
-    await prefs.remove(_recurringDaysKey);
-    await prefs.remove(_recurringTimeKey);
+    await prefs.remove(_isDailyKey);
 
     // Cancel all notifications
     await cancelAllNotifications();
@@ -261,13 +232,6 @@ class NotificationService {
           await _scheduleCountdownNotification(settings);
         }
         break;
-      case NotificationType.recurring:
-        if (settings.recurringDays != null &&
-            settings.recurringTime != null &&
-            settings.recurringDays!.isNotEmpty) {
-          await _scheduleRecurringNotifications(settings);
-        }
-        break;
       case NotificationType.disabled:
         break;
     }
@@ -276,11 +240,20 @@ class NotificationService {
   Future<void> _scheduleOneTimeNotification(NotificationSettings settings) async {
     if (settings.scheduleTime == null ||
         settings.scheduleTime!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
-      debugPrint('NotificationService: Invalid schedule time for one-time notification');
+      debugPrint('NotificationService: Invalid schedule time for notification');
       return;
     }
 
-    debugPrint('NotificationService: Scheduling one-time notification for ${settings.scheduleTime}');
+    if (settings.isDaily) {
+      debugPrint('NotificationService: Scheduling daily notification for ${TimeOfDay.fromDateTime(settings.scheduleTime!)}');
+      await _scheduleDailyNotification(settings);
+    } else {
+      debugPrint('NotificationService: Scheduling one-time notification for ${settings.scheduleTime}');
+      await _scheduleOneTimeSingleNotification(settings);
+    }
+  }
+
+  Future<void> _scheduleOneTimeSingleNotification(NotificationSettings settings) async {
 
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
@@ -371,12 +344,7 @@ class NotificationService {
     }
   }
 
-  Future<void> _scheduleRecurringNotifications(NotificationSettings settings) async {
-    if (settings.recurringDays == null ||
-        settings.recurringTime == null ||
-        settings.recurringDays!.isEmpty) {
-      return;
-    }
+  Future<void> _scheduleDailyNotification(NotificationSettings settings) async {
 
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
@@ -402,40 +370,36 @@ class NotificationService {
       macOS: macOSPlatformChannelSpecifics,
     );
 
-    // Schedule for each selected day
-    for (int i = 0; i < settings.recurringDays!.length; i++) {
-      final dayOfWeek = settings.recurringDays![i];
+    // Schedule daily notification starting from the selected time
+    final now = DateTime.now();
+    final timeOfDay = TimeOfDay.fromDateTime(settings.scheduleTime!);
+    DateTime scheduledDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      timeOfDay.hour,
+      timeOfDay.minute,
+    );
 
-      // Find the next occurrence of this day at the specified time
-      final now = DateTime.now();
-      DateTime scheduledDate = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        settings.recurringTime!.hour,
-        settings.recurringTime!.minute,
-      );
+    // If the time has already passed today, start tomorrow
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
 
-      // Adjust to the correct day of week
-      final currentDayOfWeek = scheduledDate.weekday;
-      int daysToAdd = (dayOfWeek - currentDayOfWeek) % 7;
-
-      // If it's today but the time has already passed, schedule for next week
-      if (daysToAdd == 0 && scheduledDate.isBefore(now)) {
-        daysToAdd = 7;
-      }
-
-      scheduledDate = scheduledDate.add(Duration(days: daysToAdd));
-
+    try {
       await _flutterLocalNotificationsPlugin.zonedSchedule(
-        100 + i, // Use different IDs for each recurring notification
+        100, // ID for daily notification
         settings.title,
         settings.body,
         tz.TZDateTime.from(scheduledDate, tz.local),
         platformChannelSpecifics,
-        payload: 'recurring_reminder_$dayOfWeek',
+        payload: 'daily_reminder',
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
       );
+      debugPrint('NotificationService: Daily notification scheduled successfully for ${timeOfDay.hour.toString().padLeft(2, '0')}:${timeOfDay.minute.toString().padLeft(2, '0')}');
+    } catch (e) {
+      debugPrint('NotificationService: Failed to schedule daily notification: $e');
     }
   }
 

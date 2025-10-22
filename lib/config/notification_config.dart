@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 
-enum NotificationType { disabled, oneTime, countdown, recurring }
+enum NotificationType { disabled, oneTime, countdown }
 
 class NotificationSettings {
   final NotificationType type;
@@ -10,17 +10,15 @@ class NotificationSettings {
   final String body;
   final DateTime? scheduleTime;
   final Duration? countdownDuration;
-  final List<int>? recurringDays; // 1-7 for Monday-Sunday
-  final TimeOfDay? recurringTime;
+  final bool isDaily;
 
   const NotificationSettings({
-    this.type = NotificationType.disabled,
+    this.type = NotificationType.oneTime,
     this.title = 'Gentle reminder',
     this.body = 'Is it time to apply the brake?',
     this.scheduleTime,
     this.countdownDuration,
-    this.recurringDays,
-    this.recurringTime,
+    this.isDaily = false,
   });
 
   NotificationSettings copyWith({
@@ -29,8 +27,7 @@ class NotificationSettings {
     String? body,
     DateTime? scheduleTime,
     Duration? countdownDuration,
-    List<int>? recurringDays,
-    TimeOfDay? recurringTime,
+    bool? isDaily,
   }) {
     return NotificationSettings(
       type: type ?? this.type,
@@ -38,12 +35,13 @@ class NotificationSettings {
       body: body ?? this.body,
       scheduleTime: scheduleTime ?? this.scheduleTime,
       countdownDuration: countdownDuration ?? this.countdownDuration,
-      recurringDays: recurringDays ?? this.recurringDays,
-      recurringTime: recurringTime ?? this.recurringTime,
+      isDaily: isDaily ?? this.isDaily,
     );
   }
 
-  static const NotificationSettings defaultSettings = NotificationSettings();
+  static const NotificationSettings defaultSettings = NotificationSettings(
+    type: NotificationType.oneTime,
+  );
 }
 
 class NotificationConfigDialog extends StatefulWidget {
@@ -68,8 +66,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
   late TextEditingController _bodyController;
   DateTime? _selectedDateTime;
   Duration? _selectedCountdown;
-  TimeOfDay? _selectedRecurringTime;
-  Set<int> _selectedDays = {};
+  bool _isDaily = false;
   bool _hasRequiredPermissions = true;
 
   // Predefined countdown durations
@@ -90,8 +87,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     _bodyController = TextEditingController(text: widget.initialSettings.body);
     _selectedDateTime = widget.initialSettings.scheduleTime;
     _selectedCountdown = widget.initialSettings.countdownDuration;
-    _selectedRecurringTime = widget.initialSettings.recurringTime;
-    _selectedDays = widget.initialSettings.recurringDays?.toSet() ?? {};
+    _isDaily = widget.initialSettings.isDaily;
 
     _titleController.addListener(() => setState(() {}));
     _bodyController.addListener(() => setState(() {}));
@@ -124,19 +120,9 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
            current.body != widget.initialSettings.body ||
            current.scheduleTime != widget.initialSettings.scheduleTime ||
            current.countdownDuration != widget.initialSettings.countdownDuration ||
-           !_listsEqual(current.recurringDays, widget.initialSettings.recurringDays) ||
-           current.recurringTime != widget.initialSettings.recurringTime;
+           current.isDaily != widget.initialSettings.isDaily;
   }
 
-  bool _listsEqual(List<int>? a, List<int>? b) {
-    if (a == null && b == null) return true;
-    if (a == null || b == null) return false;
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
 
   NotificationSettings _buildCurrentSettings() {
     return NotificationSettings(
@@ -145,8 +131,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
       body: _bodyController.text.trim().isEmpty ? 'Is it time to apply the brake?' : _bodyController.text.trim(),
       scheduleTime: _selectedType == NotificationType.oneTime ? _selectedDateTime : null,
       countdownDuration: _selectedType == NotificationType.countdown ? _selectedCountdown : null,
-      recurringDays: _selectedType == NotificationType.recurring ? (_selectedDays.toList()..sort()) : null,
-      recurringTime: _selectedType == NotificationType.recurring ? _selectedRecurringTime : null,
+      isDaily: _selectedType == NotificationType.oneTime ? _isDaily : false,
     );
   }
 
@@ -216,31 +201,6 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     }
   }
 
-  Future<void> _selectRecurringTime() async {
-    final time = await showTimePicker(
-      context: context,
-      initialTime: _selectedRecurringTime ?? const TimeOfDay(hour: 9, minute: 0),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Colors.white,
-              onPrimary: Colors.black,
-              surface: Colors.black,
-              onSurface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (time != null) {
-      setState(() {
-        _selectedRecurringTime = time;
-      });
-    }
-  }
 
   String _formatCustomDuration(Duration duration) {
     if (duration.inHours > 0) {
@@ -399,9 +359,9 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
       children: [
         const Text(
           'Notification Type',
-          style: TextStyle(color: Colors.white, fontSize: 16),
+          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         ...NotificationType.values.map((type) {
           String label;
           switch (type) {
@@ -409,27 +369,28 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
               label = 'Disabled';
               break;
             case NotificationType.oneTime:
-              label = 'One-time';
+              label = 'Schedule';
               break;
             case NotificationType.countdown:
               label = 'Countdown';
               break;
-            case NotificationType.recurring:
-              label = 'Recurring';
-              break;
           }
 
-          return RadioListTile<NotificationType>(
-            title: Text(label, style: const TextStyle(color: Colors.white)),
-            value: type,
-            groupValue: _selectedType,
-            onChanged: (NotificationType? value) {
-              setState(() {
-                _selectedType = value!;
-              });
-            },
-            activeColor: Colors.white,
-            contentPadding: EdgeInsets.zero,
+          return Container(
+            margin: const EdgeInsets.only(bottom: 4),
+            child: RadioListTile<NotificationType>(
+              title: Text(label, style: const TextStyle(color: Colors.white)),
+              value: type,
+              groupValue: _selectedType,
+              onChanged: (NotificationType? value) {
+                setState(() {
+                  _selectedType = value!;
+                });
+              },
+              activeColor: Colors.white,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
           );
         }),
       ],
@@ -441,7 +402,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Title', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         TextField(
           controller: _titleController,
           maxLength: 50,
@@ -455,13 +416,13 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
             counterStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
           ),
         ),
-        const SizedBox(height: 15),
+        const SizedBox(height: 10),
         const Text('Message', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         TextField(
           controller: _bodyController,
           maxLength: 100,
-          maxLines: 3,
+          maxLines: 2,
           minLines: 1,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
@@ -482,7 +443,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Schedule', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         ElevatedButton(
           onPressed: _selectDateTime,
           style: ElevatedButton.styleFrom(
@@ -495,6 +456,27 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
                 : 'Select date & time',
           ),
         ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Checkbox(
+              value: _isDaily,
+              onChanged: (bool? value) {
+                setState(() {
+                  _isDaily = value ?? false;
+                });
+              },
+              activeColor: Colors.white,
+              checkColor: Colors.black,
+              side: const BorderSide(color: Colors.grey, width: 1.5),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Daily',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -504,10 +486,10 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Countdown Duration', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: [
             ..._presetDurations.map((duration) {
               String label;
@@ -560,54 +542,6 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     );
   }
 
-  Widget _buildRecurringConfig() {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Days', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          children: List.generate(7, (index) {
-            final dayNum = index + 1;
-            return ChoiceChip(
-              label: Text(days[index]),
-              selected: _selectedDays.contains(dayNum),
-              onSelected: (selected) {
-                setState(() {
-                  if (selected) {
-                    _selectedDays.add(dayNum);
-                  } else {
-                    _selectedDays.remove(dayNum);
-                  }
-                });
-              },
-              backgroundColor: Colors.grey[800],
-              selectedColor: Colors.grey[600],
-              labelStyle: const TextStyle(color: Colors.white),
-            );
-          }),
-        ),
-        const SizedBox(height: 15),
-        const Text('Time', style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 10),
-        ElevatedButton(
-          onPressed: _selectRecurringTime,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.grey[700],
-            foregroundColor: Colors.white,
-          ),
-          child: Text(
-            _selectedRecurringTime != null
-                ? '${_selectedRecurringTime!.hour.toString().padLeft(2, '0')}:${_selectedRecurringTime!.minute.toString().padLeft(2, '0')}'
-                : 'Select time',
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildPermissionWarning() {
     if (_hasRequiredPermissions || _selectedType == NotificationType.disabled) {
@@ -615,8 +549,8 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.orange.withOpacity(0.1),
         border: Border.all(color: Colors.orange, width: 1),
@@ -638,12 +572,12 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Notifications require "Alarms & reminders" permission. Please enable it in Android Settings > Apps > Soft Brake > Permissions.',
             style: TextStyle(color: Colors.orange.shade300, fontSize: 12),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           ElevatedButton(
             onPressed: () async {
               await NotificationService().requestPermissions();
@@ -666,7 +600,7 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
     return Dialog(
       backgroundColor: Colors.black,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.black,
           border: Border.all(color: Colors.grey, width: 1),
@@ -686,66 +620,75 @@ class _NotificationConfigDialogState extends State<NotificationConfigDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 16),
               _buildPermissionWarning(),
+              if (_selectedType != NotificationType.disabled) ...[
+                _buildTextFields(),
+                const SizedBox(height: 12),
+              ],
               _buildTypeSelection(),
               if (_selectedType != NotificationType.disabled) ...[
-                const SizedBox(height: 20),
-                _buildTextFields(),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 if (_selectedType == NotificationType.oneTime) _buildOneTimeConfig(),
                 if (_selectedType == NotificationType.countdown) _buildCountdownConfig(),
-                if (_selectedType == NotificationType.recurring) _buildRecurringConfig(),
               ],
-              const SizedBox(height: 25),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton(
-                    onPressed: () async {
-                      await widget.onDefaults();
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[800],
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(60, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          await widget.onDefaults();
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[800],
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        child: const Text('Defaults'),
+                      ),
                     ),
-                    child: const Text('Defaults'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(60, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      side: BorderSide(color: Colors.grey[600]!, width: 1),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          side: BorderSide(color: Colors.grey[600]!, width: 1),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
                     ),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _hasChanges() ? () {
-                      final settings = _buildCurrentSettings();
-                      widget.onSave(settings);
-                      Navigator.of(context).pop();
-                    } : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _hasChanges() ? Colors.green[600] : Colors.grey[700],
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(60, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _hasChanges() ? () {
+                          final settings = _buildCurrentSettings();
+                          widget.onSave(settings);
+                          Navigator.of(context).pop();
+                        } : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _hasChanges() ? Colors.green[600] : Colors.grey[700],
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        child: const Text('Save'),
+                      ),
                     ),
-                    child: const Text('Save'),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
